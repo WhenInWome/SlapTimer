@@ -98,8 +98,19 @@ static void draw(Layer *layer, GContext *ctx) {
                      : s_state == StateRunning ? "" : "TAP TO RESTART";
   int cx = b.size.w / 2, max_w = b.size.w - 8;
 
+  time_t now = time(NULL);
+  struct tm *lt = localtime(&now);
+  char clock[10];
+  if (clock_is_24h_style()) {
+    snprintf(clock, sizeof(clock), "%d:%02d", lt->tm_hour, lt->tm_min);
+  } else {
+    int h = lt->tm_hour % 12;
+    snprintf(clock, sizeof(clock), "%d:%02d%s", h ? h : 12, lt->tm_min, lt->tm_hour < 12 ? "AM" : "PM");
+  }
+  draw_pixel_text(ctx, clock, 2, b.size.w - 4 - pixel_text_width(clock, 2) / 2, 4);
+
   int ts = fit_scale(top, 3, max_w);
-  draw_pixel_text(ctx, top, ts, cx, 10);
+  draw_pixel_text(ctx, top, ts, cx, 26);
 
   char num[12];
   format_time(s_shown_secs, num, sizeof(num));
@@ -153,6 +164,10 @@ static void adjust(int delta) {
   layer_mark_dirty(s_layer);
 }
 
+static void minute_tick(struct tm *t, TimeUnits units) {
+  layer_mark_dirty(s_layer);
+}
+
 static void up_handler(ClickRecognizerRef r, void *c) { adjust(STEP); }
 static void down_handler(ClickRecognizerRef r, void *c) { adjust(-STEP); }
 
@@ -187,6 +202,7 @@ static void init(void) {
   window_set_window_handlers(s_window, (WindowHandlers){
     .load = window_load, .unload = window_unload });
   window_stack_push(s_window, true);
+  tick_timer_service_subscribe(MINUTE_UNIT, minute_tick);
 #ifdef PBL_TOUCH
   touch_service_subscribe(touch_handler, NULL);
 #endif
@@ -196,6 +212,7 @@ static void deinit(void) {
 #ifdef PBL_TOUCH
   touch_service_unsubscribe();
 #endif
+  tick_timer_service_unsubscribe();
   if (s_timer) app_timer_cancel(s_timer);
   persist_write_int(1, s_set_secs);
   window_destroy(s_window);
