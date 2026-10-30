@@ -116,8 +116,7 @@ static void draw(Layer *layer, GContext *ctx) {
   }
   graphics_context_set_fill_color(ctx, GColorWhite);
 
-  const char *top = s_state == StateSet ? "SLAP TIMER"
-                  : s_state == StateRunning ? "GO" : "";
+  const char *top = s_state == StateSet ? "SLAP TIMER" : "";
   const char *bottom = s_state == StateSet ? "TAP TO START"
                      : s_state == StateRunning ? "" : "TAP TO RESTART";
   int cx = b.size.w / 2, max_w = b.size.w - 8;
