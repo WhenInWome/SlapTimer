@@ -17,7 +17,7 @@ static time_t s_end_sec;
 static uint16_t s_end_ms;
 
 // Background wave: its edge starts above the top and steps down one slice per second.
-#define WAVE_AMP 6
+#define WAVE_AMP 3
 #define WAVE_STRIP 4
 #define WAVE_LEN 100
 #define ANIM_MS 60
@@ -163,11 +163,14 @@ static void tick(void *data) {
   if (rem_ms <= 0) { finish(); return; }
   s_shown_secs = (rem_ms + 999) / 1000;
   s_edge_target = edge_for(s_shown_secs);
+  if (!s_anim) s_anim = app_timer_register(ANIM_MS, anim, NULL);
   layer_mark_dirty(s_layer);
   s_timer = app_timer_register(rem_ms % 1000 ? rem_ms % 1000 : 1000, tick, NULL);
 }
 
+// Runs only while the edge is sliding to its new position after a tick.
 static void anim(void *data) {
+  s_anim = NULL;
   s_phase += TRIG_MAX_ANGLE / 24;
   int diff = s_edge_target - s_edge;
   if (diff > 0) {
@@ -175,7 +178,7 @@ static void anim(void *data) {
     if (s_edge > s_edge_target) s_edge = s_edge_target;
   }
   layer_mark_dirty(s_layer);
-  s_anim = app_timer_register(ANIM_MS, anim, NULL);
+  if (s_edge < s_edge_target) s_anim = app_timer_register(ANIM_MS, anim, NULL);
 }
 
 static void start(void) {
@@ -189,7 +192,6 @@ static void start(void) {
   s_edge = s_edge_target = edge_for(s_set_secs);
   layer_mark_dirty(s_layer);
   s_timer = app_timer_register(1000, tick, NULL);
-  s_anim = app_timer_register(ANIM_MS, anim, NULL);
 }
 
 static void adjust(int delta) {
