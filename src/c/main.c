@@ -117,7 +117,7 @@ static void draw(Layer *layer, GContext *ctx) {
   graphics_context_set_fill_color(ctx, GColorWhite);
 
   const char *top = s_state == StateSet ? "SLAP TIMER"
-                  : s_state == StateRunning ? "GO" : "TIME!";
+                  : s_state == StateRunning ? "GO" : "";
   const char *bottom = s_state == StateSet ? "TAP TO START"
                      : s_state == StateRunning ? "" : "TAP TO RESTART";
   int cx = b.size.w / 2, max_w = b.size.w - 8;
@@ -131,7 +131,7 @@ static void draw(Layer *layer, GContext *ctx) {
     int h = lt->tm_hour % 12;
     snprintf(clock, sizeof(clock), "%d:%02d%s", h ? h : 12, lt->tm_min, lt->tm_hour < 12 ? "AM" : "PM");
   }
-  draw_pixel_text(ctx, clock, 2, b.size.w - 4 - pixel_text_width(clock, 2) / 2, 4);
+  draw_pixel_text(ctx, clock, 2, b.size.w - 5 - pixel_text_width(clock, 2) / 2, 5);
 
   int ts = fit_scale(top, 3, max_w);
   draw_pixel_text(ctx, top, ts, cx, 26);
