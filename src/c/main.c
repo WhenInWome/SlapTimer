@@ -16,6 +16,20 @@ static int s_shown_secs = 30;   // value currently on screen
 static time_t s_end_sec;
 static uint16_t s_end_ms;
 
+// Background wave: its edge starts above the top and steps down one slice per second.
+#define WAVE_AMP 6
+#define WAVE_STRIP 4
+#define WAVE_LEN 100
+#define ANIM_MS 60
+static AppTimer *s_anim;
+static int s_edge, s_edge_target;
+static int32_t s_phase;
+static int s_height = 228;
+
+static int edge_for(int shown) {
+  return -WAVE_AMP + (s_height + 2 * WAVE_AMP) * (s_set_secs - shown) / s_set_secs;
+}
+
 static void format_time(int secs, char *buf, size_t n) {
   if (secs >= 60) snprintf(buf, n, "%d:%02d", secs / 60, secs % 60);
   else snprintf(buf, n, "%d", secs);
@@ -86,10 +100,20 @@ static int fit_scale(const char *s, int max_scale, int max_w) {
 static void draw(Layer *layer, GContext *ctx) {
   GRect b = layer_get_bounds(layer);
   GColor bg = GColorBlack;
-  if (s_state == StateRunning) bg = PBL_IF_COLOR_ELSE(GColorDarkGreen, GColorBlack);
   if (s_state == StateDone) bg = PBL_IF_COLOR_ELSE(GColorDarkCandyAppleRed, GColorBlack);
   graphics_context_set_fill_color(ctx, bg);
   graphics_fill_rect(ctx, b, 0, GCornerNone);
+  if (s_state == StateRunning) {
+    // Time left is the coloured area below the wave edge; elapsed time is black above it.
+    graphics_context_set_fill_color(ctx, PBL_IF_COLOR_ELSE(GColorDarkGreen, GColorWhite));
+    for (int x = 0; x < b.size.w; x += WAVE_STRIP) {
+      int32_t ang = (int32_t)x * TRIG_MAX_ANGLE / WAVE_LEN + s_phase;
+      int y = s_edge + WAVE_AMP * sin_lookup(ang) / TRIG_MAX_RATIO;
+      if (y < 0) y = 0;
+      if (y < b.size.h)
+        graphics_fill_rect(ctx, GRect(x, y, WAVE_STRIP, b.size.h - y), 0, GCornerNone);
+    }
+  }
   graphics_context_set_fill_color(ctx, GColorWhite);
 
   const char *top = s_state == StateSet ? "SLAP TIMER"
@@ -125,6 +149,7 @@ static void tick(void *data);
 
 static void finish(void) {
   s_timer = NULL;
+  if (s_anim) { app_timer_cancel(s_anim); s_anim = NULL; }
   s_state = StateDone;
   s_shown_secs = 0;
   vibes_long_pulse();
@@ -138,8 +163,20 @@ static void tick(void *data) {
   int rem_ms = (int)(s_end_sec - now) * 1000 + (int)s_end_ms - (int)now_ms;
   if (rem_ms <= 0) { finish(); return; }
   s_shown_secs = (rem_ms + 999) / 1000;
+  s_edge_target = edge_for(s_shown_secs);
   layer_mark_dirty(s_layer);
   s_timer = app_timer_register(rem_ms % 1000 ? rem_ms % 1000 : 1000, tick, NULL);
+}
+
+static void anim(void *data) {
+  s_phase += TRIG_MAX_ANGLE / 24;
+  int diff = s_edge_target - s_edge;
+  if (diff > 0) {
+    s_edge += diff / 3 + 1;
+    if (s_edge > s_edge_target) s_edge = s_edge_target;
+  }
+  layer_mark_dirty(s_layer);
+  s_anim = app_timer_register(ANIM_MS, anim, NULL);
 }
 
 static void start(void) {
@@ -150,8 +187,10 @@ static void start(void) {
   s_end_ms = now_ms;
   s_state = StateRunning;
   s_shown_secs = s_set_secs;
+  s_edge = s_edge_target = edge_for(s_set_secs);
   layer_mark_dirty(s_layer);
   s_timer = app_timer_register(1000, tick, NULL);
+  s_anim = app_timer_register(ANIM_MS, anim, NULL);
 }
 
 static void adjust(int delta) {
@@ -185,6 +224,7 @@ static void touch_handler(const TouchEvent *e, void *ctx) {
 static void window_load(Window *w) {
   Layer *root = window_get_root_layer(w);
   s_layer = layer_create(layer_get_bounds(root));
+  s_height = layer_get_bounds(root).size.h;
   layer_set_update_proc(s_layer, draw);
   layer_add_child(root, s_layer);
 }
@@ -214,6 +254,7 @@ static void deinit(void) {
 #endif
   tick_timer_service_unsubscribe();
   if (s_timer) app_timer_cancel(s_timer);
+  if (s_anim) app_timer_cancel(s_anim);
   persist_write_int(1, s_set_secs);
   window_destroy(s_window);
 }
