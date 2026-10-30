@@ -21,6 +21,68 @@ static void format_time(int secs, char *buf, size_t n) {
   else snprintf(buf, n, "%d", secs);
 }
 
+// 5x7 pixel font, drawn as blocks so it scales by whole pixels.
+typedef struct { char c; uint8_t w; uint8_t rows[7]; } Glyph;
+static const Glyph GLYPHS[] = {
+  {'0', 5, {0x0E,0x11,0x13,0x15,0x19,0x11,0x0E}},
+  {'1', 5, {0x04,0x0C,0x04,0x04,0x04,0x04,0x0E}},
+  {'2', 5, {0x0E,0x11,0x01,0x02,0x04,0x08,0x1F}},
+  {'3', 5, {0x1E,0x01,0x01,0x0E,0x01,0x01,0x1E}},
+  {'4', 5, {0x02,0x06,0x0A,0x12,0x1F,0x02,0x02}},
+  {'5', 5, {0x1F,0x10,0x1E,0x01,0x01,0x11,0x0E}},
+  {'6', 5, {0x06,0x08,0x10,0x1E,0x11,0x11,0x0E}},
+  {'7', 5, {0x1F,0x01,0x02,0x04,0x08,0x08,0x08}},
+  {'8', 5, {0x0E,0x11,0x11,0x0E,0x11,0x11,0x0E}},
+  {'9', 5, {0x0E,0x11,0x11,0x0F,0x01,0x02,0x0C}},
+  {':', 1, {0x00,0x01,0x01,0x00,0x01,0x01,0x00}},
+  {'!', 1, {0x01,0x01,0x01,0x01,0x01,0x00,0x01}},
+  {'A', 5, {0x0E,0x11,0x11,0x1F,0x11,0x11,0x11}},
+  {'E', 5, {0x1F,0x10,0x10,0x1E,0x10,0x10,0x1F}},
+  {'G', 5, {0x0E,0x11,0x10,0x17,0x11,0x11,0x0F}},
+  {'I', 5, {0x0E,0x04,0x04,0x04,0x04,0x04,0x0E}},
+  {'L', 5, {0x10,0x10,0x10,0x10,0x10,0x10,0x1F}},
+  {'M', 5, {0x11,0x1B,0x15,0x15,0x11,0x11,0x11}},
+  {'O', 5, {0x0E,0x11,0x11,0x11,0x11,0x11,0x0E}},
+  {'P', 5, {0x1E,0x11,0x11,0x1E,0x10,0x10,0x10}},
+  {'R', 5, {0x1E,0x11,0x11,0x1E,0x14,0x12,0x11}},
+  {'S', 5, {0x0F,0x10,0x10,0x0E,0x01,0x01,0x1E}},
+  {'T', 5, {0x1F,0x04,0x04,0x04,0x04,0x04,0x04}},
+};
+
+static const Glyph *find_glyph(char c) {
+  for (size_t i = 0; i < ARRAY_LENGTH(GLYPHS); i++) if (GLYPHS[i].c == c) return &GLYPHS[i];
+  return NULL;  // space and anything unknown
+}
+
+static int pixel_text_width(const char *s, int scale) {
+  int w = 0;
+  for (; *s; s++) {
+    const Glyph *g = find_glyph(*s);
+    w += ((g ? g->w : 3) + 1) * scale;
+  }
+  return w - scale;
+}
+
+static void draw_pixel_text(GContext *ctx, const char *s, int scale, int cx, int y) {
+  int x = cx - pixel_text_width(s, scale) / 2;
+  for (; *s; s++) {
+    const Glyph *g = find_glyph(*s);
+    if (g) {
+      for (int r = 0; r < 7; r++)
+        for (int c = 0; c < g->w; c++)
+          if (g->rows[r] & (1 << (g->w - 1 - c)))
+            graphics_fill_rect(ctx, GRect(x + c * scale, y + r * scale, scale, scale), 0, GCornerNone);
+    }
+    x += ((g ? g->w : 3) + 1) * scale;
+  }
+}
+
+static int fit_scale(const char *s, int max_scale, int max_w) {
+  int sc = max_scale;
+  while (sc > 1 && pixel_text_width(s, sc) > max_w) sc--;
+  return sc;
+}
+
 static void draw(Layer *layer, GContext *ctx) {
   GRect b = layer_get_bounds(layer);
   GColor bg = GColorBlack;
@@ -28,26 +90,24 @@ static void draw(Layer *layer, GContext *ctx) {
   if (s_state == StateDone) bg = PBL_IF_COLOR_ELSE(GColorDarkCandyAppleRed, GColorBlack);
   graphics_context_set_fill_color(ctx, bg);
   graphics_fill_rect(ctx, b, 0, GCornerNone);
-  graphics_context_set_text_color(ctx, GColorWhite);
+  graphics_context_set_fill_color(ctx, GColorWhite);
 
   const char *top = s_state == StateSet ? "SLAP TIMER"
                   : s_state == StateRunning ? "GO" : "TIME!";
-  const char *bottom = s_state == StateSet ? "Tap to start"
-                     : s_state == StateRunning ? "" : "Tap to restart";
+  const char *bottom = s_state == StateSet ? "TAP TO START"
+                     : s_state == StateRunning ? "" : "TAP TO RESTART";
+  int cx = b.size.w / 2, max_w = b.size.w - 8;
 
-  graphics_draw_text(ctx, top, fonts_get_system_font(FONT_KEY_GOTHIC_24_BOLD),
-                     GRect(0, 8, b.size.w, 30), GTextOverflowModeFill,
-                     GTextAlignmentCenter, NULL);
+  int ts = fit_scale(top, 3, max_w);
+  draw_pixel_text(ctx, top, ts, cx, 10);
 
   char num[12];
   format_time(s_shown_secs, num, sizeof(num));
-  graphics_draw_text(ctx, num, fonts_get_system_font(FONT_KEY_BITHAM_42_BOLD),
-                     GRect(0, b.size.h / 2 - 36, b.size.w, 50), GTextOverflowModeFill,
-                     GTextAlignmentCenter, NULL);
+  int ns = fit_scale(num, 10, max_w);
+  draw_pixel_text(ctx, num, ns, cx, (b.size.h - 7 * ns) / 2);
 
-  graphics_draw_text(ctx, bottom, fonts_get_system_font(FONT_KEY_GOTHIC_24),
-                     GRect(0, b.size.h - 40, b.size.w, 30), GTextOverflowModeFill,
-                     GTextAlignmentCenter, NULL);
+  int bs = fit_scale(bottom, 3, max_w);
+  draw_pixel_text(ctx, bottom, bs, cx, b.size.h - 10 - 7 * bs);
 }
 
 static void tick(void *data);
