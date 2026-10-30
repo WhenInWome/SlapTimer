@@ -145,6 +145,7 @@ static void draw(Layer *layer, GContext *ctx) {
 }
 
 static void tick(void *data);
+static void anim(void *data);
 
 static void finish(void) {
   s_timer = NULL;
