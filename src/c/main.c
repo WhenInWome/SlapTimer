@@ -189,6 +189,7 @@ static void start(void) {
   s_end_sec = now + s_set_secs;
   s_end_ms = now_ms;
   s_state = StateRunning;
+  vibes_short_pulse();
   s_shown_secs = s_set_secs;
   s_edge = s_edge_target = edge_for(s_set_secs);
   layer_mark_dirty(s_layer);
